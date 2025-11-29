@@ -47,30 +47,43 @@ st.write("Upload foto wajah untuk mengenali identitas.")
 uploaded_file = st.file_uploader("Upload file JPG/PNG", type=["jpg","jpeg","png"])
 
 def predict(img):
-    # detect face
+    # Step 1: Face detection
     face = mtcnn(img)
+
     if face is None:
         return None, "Face not detected"
 
-    # face → PIL → preprocess
-    face_cpu = face.permute(0,2,3,1).cpu().numpy()[0]
-    face_pil = Image.fromarray((face_cpu*255).astype(np.uint8))
+    # MTCNN output can be:
+    # (1, 3, 224, 224)  OR  (3, 224, 224)
+    face = face.cpu()
+
+    if face.dim() == 3:
+        # shape: (3,224,224) → jadikan batch 1
+        face = face.unsqueeze(0)
+
+    # Now face = (1,3,224,224)
+    face_np = face.squeeze(0).permute(1,2,0).numpy()  # (224,224,3)
+    face_np = (face_np * 255).astype("uint8")
+    face_pil = Image.fromarray(face_np)
+
+    # Preprocess
     inp = val_transform(face_pil).unsqueeze(0).to(device)
 
+    # Embedding
     with torch.no_grad():
-        emb = model(inp)  # embeddings
-
-    # cosine similarity with class weights
+        emb = model(inp)   # returns embedding
     emb = emb.cpu().numpy()
+
+    # ArcFace similarity to class centers
     weight = model.arcface.weight.data.cpu().numpy()
-    emb_norm = emb / np.linalg.norm(emb)
     weight_norm = weight / np.linalg.norm(weight, axis=1, keepdims=True)
-    sims = np.dot(emb_norm, weight_norm.T)
+    emb_norm = emb / np.linalg.norm(emb, axis=1, keepdims=True)
 
-    idx = np.argmax(sims)
-    confidence = sims[0][idx]
+    sims = emb_norm.dot(weight_norm.T)
+    idx = sims.argmax()
+    conf = sims[0, idx]
 
-    return classes[idx], float(confidence)
+    return classes[idx], float(conf)
 
 if uploaded_file:
     img = Image.open(uploaded_file).convert("RGB")
