@@ -6,6 +6,9 @@ from torchvision import transforms
 from facenet_pytorch import MTCNN
 import timm
 import cv2
+import torch.serialization
+
+torch.serialization.add_safe_globals([np.core.multiarray._reconstruct])
 
 # ====== Load model (modify to match your checkpoint) ======
 from model import FaceModel  # your FaceModel class
@@ -14,7 +17,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 @st.cache_resource
 def load_model():
-    ckpt = torch.load("best_model_efficientnet_b0.pth", map_location=device)
+    ckpt = torch.load("best_model_efficientnet_b0.pth", map_location=device, weights_only=False)
     model = FaceModel(
         ckpt["backbone"],
         ckpt["embedding_size"],
